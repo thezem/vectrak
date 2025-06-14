@@ -25,6 +25,7 @@ export interface CreateIndexConfig {
 export class LocalIndex<TMetadata extends Record<string,MetadataTypes> = Record<string,MetadataTypes>>{
     private readonly _folderPath: string;
     private readonly _indexName: string;
+    private readonly _cacheIndexData: boolean;
 
     private _data?: IndexData;
     private _update?: IndexData;
@@ -36,9 +37,10 @@ export class LocalIndex<TMetadata extends Record<string,MetadataTypes> = Record<
      * @param folderPath Path to the index folder.
      * @param indexName Optional name of the index file. Defaults to index.json.
      */
-    public constructor(folderPath: string, indexName?: string) {
+    public constructor(folderPath: string, indexName?: string, options: { cache?: boolean } = {}) {
         this._folderPath = folderPath;
         this._indexName = indexName || "index.json";
+        this._cacheIndexData = options.cache ?? true;
     }
 
     /**
@@ -160,6 +162,7 @@ export class LocalIndex<TMetadata extends Record<string,MetadataTypes> = Record<
             await fs.writeFile(path.join(this._folderPath, this._indexName), JSON.stringify(this._update));
             this._data = this._update;
             this._update = undefined;
+            this.unloadIndexData();
         } catch(err: unknown) {
             throw new Error(`Error saving index: ${(err as any).toString()}`);
         }
@@ -171,11 +174,13 @@ export class LocalIndex<TMetadata extends Record<string,MetadataTypes> = Record<
      */
     public async getIndexStats(): Promise<IndexStats> {
         await this.loadIndexData();
-        return {
+        const stats = {
             version: this._data!.version,
             metadata_config: this._data!.metadata_config,
             items: this._data!.items.length
         };
+        this.unloadIndexData();
+        return stats;
     }
 
     /**
@@ -185,7 +190,9 @@ export class LocalIndex<TMetadata extends Record<string,MetadataTypes> = Record<
      */
     public async getItem<TItemMetadata extends TMetadata = TMetadata>(id: string): Promise<IndexItem<TItemMetadata> | undefined> {
         await this.loadIndexData();
-        return this._data!.items.find(i => i.id === id) as any | undefined;
+        const item = this._data!.items.find(i => i.id === id) as any | undefined;
+        this.unloadIndexData();
+        return item;
     }
 
     /**
@@ -228,7 +235,9 @@ export class LocalIndex<TMetadata extends Record<string,MetadataTypes> = Record<
      */
     public async listItems<TItemMetadata extends TMetadata = TMetadata>(): Promise<IndexItem<TItemMetadata>[]> {
         await this.loadIndexData();
-        return this._data!.items.slice() as any;
+        const items = this._data!.items.slice() as any;
+        this.unloadIndexData();
+        return items;
     }
 
     /**
@@ -240,7 +249,9 @@ export class LocalIndex<TMetadata extends Record<string,MetadataTypes> = Record<
      */
     public async listItemsByMetadata<TItemMetadata extends TMetadata = TMetadata>(filter: MetadataFilter): Promise<IndexItem<TItemMetadata>[]> {
         await this.loadIndexData();
-        return this._data!.items.filter(i => ItemSelector.select(i.metadata, filter)) as any;
+        const items = this._data!.items.filter(i => ItemSelector.select(i.metadata, filter)) as any;
+        this.unloadIndexData();
+        return items;
     }
 
     /**
@@ -319,8 +330,9 @@ export class LocalIndex<TMetadata extends Record<string,MetadataTypes> = Record<
                     score: res[1]
                 });
             });
-            
+
         }
+        this.unloadIndexData();
         return top;
     }
 
@@ -357,6 +369,15 @@ export class LocalIndex<TMetadata extends Record<string,MetadataTypes> = Record<
 
         const data = await fs.readFile(path.join(this._folderPath, this.indexName));
         this._data = JSON.parse(data.toString());
+    }
+
+    /**
+     * Releases any cached index data from memory.
+     */
+    protected unloadIndexData(): void {
+        if (!this._update && !this._cacheIndexData) {
+            this._data = undefined;
+        }
     }
 
     private async addItemToUpdate(item: Partial<IndexItem<any>>, unique: boolean): Promise<IndexItem> {

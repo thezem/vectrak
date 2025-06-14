@@ -4,7 +4,7 @@ Vectra is a local vector database for Node.js with features similar to [Pinecone
 
 When queryng Vectra you'll be able to use the same subset of [Mongo DB query operators](https://www.mongodb.com/docs/manual/reference/operator/query/) that Pinecone supports and the results will be returned sorted by simularity. Every item in the index will first be filtered by metadata and then ranked for simularity. Even though every item is evaluated its all in memory so it should by nearly instantanious. Likely 1ms - 2ms for even a rather large index. Smaller indexes should be <1ms.
 
-Keep in mind that your entire Vectra index is loaded into memory so it's not well suited for scenarios like long term chat bot memory. Use a real vector DB for that. Vectra is intended to be used in scenarios where you have a small corpus of mostly static data that you'd like to include in your prompt. Infinite few shot examples would be a great use case for Vectra or even just a single document you want to ask questions over.
+Vectra now loads the index from disk on demand and, by default, caches it in memory for performance. You can disable the cache for long running or memory constrained processes by passing `{ cache: false }` to the `LocalIndex` constructor. This allows the index to be released from memory after each operation, making Vectra more reliable for larger datasets without requiring a separate vector database.
 
 Pinecone style namespaces aren't directly supported but you could easily mimic them by creating a separate Vectra index (and folder) for each namespace.
 
@@ -27,7 +27,8 @@ First create an instance of `LocalIndex` with the path to the folder where you w
 ```typescript
 import { LocalIndex } from 'vectra';
 
-const index = new LocalIndex(path.join(__dirname, '..', 'index'));
+// Disable caching if you need a smaller memory footprint
+const index = new LocalIndex(path.join(__dirname, '..', 'index'), undefined, { cache: false });
 ```
 
 Next, from inside an async function, create your index:
